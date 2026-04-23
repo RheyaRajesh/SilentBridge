@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SilentBridge — Real-time communication between deaf/mute and speaking users via sign language recognition and speech-to-text">
+    <title>SilentBridge — Connecting voices beyond sound</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app-container" id="app">
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SPLASH SCREEN
+         ═══════════════════════════════════════════════════════════════ -->
+    <div class="screen active" id="splash">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px">
+            <div class="logo-circle">
+                <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M14 28 C14 20 22 16 30 20" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+                    <path d="M14 22 C14 16 20 12 28 15" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+                    <path d="M18 32 C20 36 26 38 32 36" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+                    <circle cx="22" cy="22" r="3" fill="#fff" opacity=".9"/>
+                </svg>
+            </div>
+            <div style="text-align:center">
+                <div class="app-name">SilentBridge</div>
+                <div class="app-tagline" style="margin-top:8px">Connecting voices beyond sound</div>
+            </div>
+            
+            <div style="width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
+                <input type="email" id="login-email" placeholder="Email" class="train-label-input" style="width: 100%; text-align: center;">
+                <input type="password" id="login-password" placeholder="Password" class="train-label-input" style="width: 100%; text-align: center;">
+                <button class="splash-btn" id="btn-login" onclick="handleLogin()" style="width: 100%;">Sign in</button>
+            </div>
+        </div>
+        <div style="padding-bottom:32px;text-align:center;font-size:12px;color:#3a3a4a">v1.0 · Powered by MediaPipe + PyTorch + Whisper</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ONBOARDING SCREEN
+         ═══════════════════════════════════════════════════════════════ -->
+    <div class="screen" id="onboard">
+        <div class="onboard-body">
+            <div class="onboard-title">How will you use SilentBridge?</div>
+            <div class="onboard-sub">This configures your camera and microphone pipeline</div>
+
+            <div class="role-card" id="role-deaf" onclick="selectRole('deaf')">
+                <div class="role-icon" style="background:#0f2a1e">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                        <path d="M7 8h5l3 4-3 4H7V8z" stroke="#1D9E75" stroke-width="1.5" stroke-linejoin="round"/>
+                        <path d="M17 10c0-2.76-2.24-5-5-5S7 7.24 7 10" stroke="#1D9E75" stroke-width="1.5" stroke-linecap="round"/>
+                        <line x1="3" y1="3" x2="21" y2="21" stroke="#1D9E75" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="role-title">I use sign language</div>
+                    <div class="role-desc">Camera captures your signs, AI translates to text and speech in real time via MediaPipe + LSTM</div>
+                </div>
+            </div>
+
+            <div class="role-card" id="role-speak" onclick="selectRole('speak')">
+                <div class="role-icon" style="background:#0a1a2e">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" stroke="#378ADD" stroke-width="1.5"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="#378ADD" stroke-width="1.5" stroke-linecap="round"/>
+                        <line x1="12" y1="19" x2="12" y2="23" stroke="#378ADD" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="role-title">I use voice</div>
+                    <div class="role-desc">Microphone captures your speech, Whisper AI transcribes to text for deaf users in real time</div>
+                </div>
+            </div>
+
+            <div style="width:100%">
+                <div class="onboard-sub" style="margin-bottom:10px">Choose language</div>
+                <div class="lang-row">
+                    <div class="lang-btn sel" id="lang-en" onclick="selectLang('en')">English</div>
+                    <div class="lang-btn" id="lang-ta" onclick="selectLang('ta')">தமிழ் Tamil</div>
+                </div>
+            </div>
+
+            <button class="next-btn" onclick="continueFromOnboard()">Continue →</button>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         HOME SCREEN
+         ═══════════════════════════════════════════════════════════════ -->
+    <div class="screen" id="home">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <div class="greeting-label" id="greeting-label">Good morning</div>
+                <div class="greeting-name" id="user-name-display">User</div>
+            </div>
+            <div class="top-bar-right">
+                <div style="font-size:13px;color:#6b6b80" id="clock">9:41</div>
+                <div class="avatar" onclick="go('settings')">U</div>
+            </div>
+        </div>
+
+        <div class="home-body">
+            <!-- Meeting actions -->
+            <div class="section-label" style="margin-top:0">Meetings</div>
+            <div class="contact-card" onclick="startNewMeeting()" style="background: rgba(29, 158, 117, 0.1); border: 1px solid rgba(29, 158, 117, 0.3);">
+                <div class="contact-av" style="background:#1D9E75;color:#fff">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </div>
+                <div class="contact-info">
+                    <div class="contact-name" style="color:#1D9E75">Start New Meeting</div>
+                    <div class="contact-status" style="color:rgba(255,255,255,0.6)">Generate link to share on WhatsApp</div>
+                </div>
+            </div>
+
+            <!-- Active mode card -->
+            <div class="status-card">
+                <div class="status-label">Active mode</div>
+                <div class="status-value" id="mode-display">Sign language user · English</div>
+                <div class="status-sub">MediaPipe ready · LSTM model initialized</div>
+            </div>
+
+            <!-- Online contacts -->
+            <div class="section-label">Contacts online</div>
+
+            <div class="contact-card" onclick="showIncoming()">
+                <div class="contact-av" style="background:#1a1a3a;color:#7F77DD">RH</div>
+                <div class="contact-info">
+                    <div class="contact-name">Rheya</div>
+                    <div class="contact-status"><span class="online-dot"></span>Online · Speaking user</div>
+                </div>
+                <div class="contact-actions">
+                    <button class="call-btn" onclick="startCall(event,'Rheya','speak')">Call</button>
+                </div>
+            </div>
+
+            <div class="contact-card">
+                <div class="contact-av" style="background:#1a0f2a;color:#AFA9EC">VI</div>
+                <div class="contact-info">
+                    <div class="contact-name">Vithaha</div>
+                    <div class="contact-status"><span class="online-dot"></span>Online · Sign language</div>
+                </div>
+                <div class="contact-actions">
+                    <button class="call-btn" onclick="startCall(event,'Vithaha','deaf')">Call</button>
+                </div>
+            </div>
+
+            <div class="contact-card" style="opacity:0.4;pointer-events:none">
+                <div class="contact-av" style="background:#1a1a1a;color:#666">PR</div>
+                <div class="contact-info">
+                    <div class="contact-name">Pratish</div>
+                    <div class="contact-status" style="color:#444">Offline</div>
+                </div>
+            </div>
+
+            <!-- Recent calls -->
+            <div class="section-label">Recent calls</div>
+
+            <div class="recent-call">
+                <div>
+                    <div class="rc-name">Rheya</div>
+                    <div class="rc-time">Yesterday, 3:24 PM</div>
+                </div>
+                <div class="rc-dur">12m 34s</div>
+            </div>
+
+            <div class="recent-call">
+                <div>
+                    <div class="rc-name">Vithaha</div>
+                    <div class="rc-time">Monday, 10:05 AM</div>
+                </div>
+                <div class="rc-dur">5m 12s</div>
+            </div>
+
+            <div style="height:80px"></div>
+        </div>
+
+        <!-- Incoming call overlay -->
+        <div class="incoming-overlay" id="incoming">
+            <div class="alert-ring">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.38 2 2 0 0 1 3.62 1.2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" stroke="#1D9E75" stroke-width="1.5"/>
+                </svg>
+            </div>
+            <div class="incoming-name" id="incoming-name">Rheya</div>
+            <div class="incoming-sub">Incoming SilentBridge call</div>
+            <div class="inc-btns">
+                <div class="inc-btn-group">
+                    <button class="inc-btn inc-decline" onclick="declineCall()">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                            <path d="M4.93 4.93l14.14 14.14" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12" stroke="#fff" stroke-width="1.5"/>
+                        </svg>
+                    </button>
+                    <span class="inc-label">Decline</span>
+                </div>
+                <div class="inc-btn-group">
+                    <button class="inc-btn inc-accept" onclick="acceptCall()">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.38 2 2 0 0 1 3.62 1.2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" stroke="#fff" stroke-width="1.5"/>
+                        </svg>
+                    </button>
+                    <span class="inc-label">Accept</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom nav -->
+        <div class="bottom-nav">
+            <div class="nav-item active" id="nav-home" onclick="go('home')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span class="nav-label">Home</span>
+            </div>
+            <div class="nav-item" id="nav-history" onclick="go('transcript-screen')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span class="nav-label">History</span>
+            </div>
+
+            <div class="nav-item" id="nav-settings" onclick="go('settings')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span class="nav-label">Settings</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         CALL SCREEN
+         ═══════════════════════════════════════════════════════════════ -->
+    <div class="screen" id="call">
+        <!-- Remote video (full background) -->
+        <div class="video-bg" id="video-bg">
+            <video id="remote-video" autoplay playsinline style="filter:brightness(0.7)"></video>
+        </div>
+
+        <!-- Self-view (picture-in-picture) -->
+        <div class="video-selfview">
+            <video id="self-video" autoplay muted playsinline></video>
+        </div>
+
+        <!-- Call header -->
+        <div class="call-header">
+            <div>
+                <div class="call-name" id="call-peer-name">Rheya</div>
+                <div class="call-dur" id="call-timer">0:00</div>
+            </div>
+            <div class="webrtc-badge" id="webrtc-badge">WebRTC ●</div>
+        </div>
+
+        <!-- Sign language status banner -->
+        <div class="sign-banner">
+            <div class="sign-mode-badge">
+                <div class="sign-anim"></div>
+                <span id="sign-status">MediaPipe active · Keypoints extracting</span>
+            </div>
+        </div>
+
+        <!-- Live transcript panel (subtitles) -->
+        <div class="transcript-panel" id="transcript-panel"></div>
+
+        <!-- Call controls -->
+        <div class="call-controls">
+            <div class="ctrl-group">
+                <button class="ctrl-btn" id="btn-share-call-link" onclick="copyMeetingLink()">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <span class="ctrl-label">Link</span>
+            </div>
+
+            <div class="ctrl-group">
+                <button class="ctrl-btn" id="btn-mic" onclick="toggleMic()">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" stroke="#fff" stroke-width="1.5"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+                        <line x1="12" y1="19" x2="12" y2="23" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <span class="ctrl-label">Mic</span>
+            </div>
+
+            <div class="ctrl-group">
+                <button class="ctrl-btn" id="btn-cam" onclick="toggleCam()">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                        <polygon points="23 7 16 12 23 17 23 7" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+                        <rect x="1" y="5" width="15" height="14" rx="2" stroke="#fff" stroke-width="1.5"/>
+                    </svg>
+                </button>
+                <span class="ctrl-label">Camera</span>
+            </div>
+
+            <div class="ctrl-group">
+                <button class="ctrl-btn end" id="btn-end" onclick="endCall()">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                        <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07" stroke="#fff" stroke-width="1.5"/>
+                        <line x1="23" y1="1" x2="1" y2="23" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <span class="ctrl-label" style="color:#e24b4a">End</span>
+            </div>
+
+            <div class="ctrl-group">
+                <button class="ctrl-btn active" onclick="go('transcript-screen')">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="#1D9E75" stroke-width="1.5"/>
+                    </svg>
+                </button>
+                <span class="ctrl-label" style="color:#1D9E75">Live text</span>
+            </div>
+
+            <div class="ctrl-group">
+                <button class="ctrl-btn" onclick="toggleTTS()">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <span class="ctrl-label" id="tts-label">TTS on</span>
+            </div>
+        </div>
+
+        <div class="pip-animation"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         TRANSCRIPT HISTORY SCREEN
+         ═══════════════════════════════════════════════════════════════ -->
+    <div class="screen" id="transcript-screen">
+        <div class="screen-header">
+            <button class="back-btn" onclick="goBack()">← Back</button>
+            <div class="screen-title">Call Transcript</div>
+        </div>
+        <div class="ts-body" id="ts-body">
+            <div class="ts-meta">Rheya · Yesterday · 12m 34s</div>
+            <div class="ts-bubble them">
+                <div class="ts-speaker" style="color:#1D9E75">Rheya (speaking → text)</div>
+                Hello! Can you hear me okay? This is amazing technology.
+            </div>
+            <div class="ts-bubble me">
+                <div class="ts-speaker" style="color:#378ADD">You (sign → text)</div>
+                Yes I can read you clearly. The translation is working well.
+            </div>
+            <div class="ts-bubble them">
+                <div class="ts-speaker" style="color:#1D9E75">Rheya (speaking → text)</div>
+                What time should we meet tomorrow? I was thinking 10 AM at the library.
+            </div>
+            <div class="ts-bubble me">
+                <div class="ts-speaker" style="color:#378ADD">You (sign → text)</div>
+                10 AM is fine. I will be there. Please bring the documents.
+            </div>
+        </div>
+        <div class="ts-footer">
+            <div class="ts-export-btn" id="btn-share-transcript" onclick="shareTranscript()">Share transcript</div>
+            <div class="ts-export-btn" id="btn-export-pdf" onclick="exportPDF()">Export PDF</div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SETTINGS SCREEN
+         ═══════════════════════════════════════════════════════════════ -->
+    <div class="screen" id="settings">
+        <div class="set-header">
+            <div class="set-title">Settings</div>
+        </div>
+        <div class="set-body">
+            <div class="set-section">Profile</div>
+            <div class="set-row">
+                <div>
+                    <div class="set-label">User role</div>
+                    <div class="set-sub">Sign language user</div>
+                </div>
+                <div class="set-val" onclick="go('onboard')">Change</div>
+            </div>
+
+            <div class="set-section">Language</div>
+            <div class="set-row">
+                <div>
+                    <div class="set-label">Display language</div>
+                    <div class="set-sub">Received text shown in this language</div>
+                </div>
+                <div id="lang-display" class="set-val" onclick="toggleLangSetting()">English</div>
+            </div>
+
+            <div class="set-section">AI Pipeline</div>
+            <div class="set-row">
+                <div>
+                    <div class="set-label">Sign Engine</div>
+                    <div class="set-sub">Universal Sign Language · Heuristic-based · Active</div>
+                </div>
+                <div class="set-val" id="model-status-badge">Pre-trained</div>
+            </div>
+            <div class="set-row">
+                <div>
+                    <div class="set-label">Speech model</div>
+                    <div class="set-sub">Whisper base · faster-whisper</div>
+                </div>
+                <div class="set-val">Active</div>
+            </div>
+            <div class="set-row">
+                <div>
+                    <div class="set-label">Confidence threshold</div>
+                    <div class="set-sub">Minimum score to display inference</div>
+                </div>
+                <div class="set-val">0.60</div>
+            </div>
+
+            <div class="set-section">Call</div>
+            <div class="set-row">
+                <div>
+                    <div class="set-label">Text overlay</div>
+                    <div class="set-sub">Show transcript on video feed</div>
+                </div>
+                <button class="toggle on" onclick="toggleBtn(this)"></button>
+            </div>
+            <div class="set-row">
+                <div>
+                    <div class="set-label">TTS for signs</div>
+                    <div class="set-sub">Speak your signs aloud to the peer</div>
+                </div>
+                <button class="toggle on" onclick="toggleBtn(this)"></button>
+            </div>
+            <div class="set-row">
+                <div>
+                    <div class="set-label">STUN servers</div>
+                    <div class="set-sub">stun.l.google.com:19302</div>
+                </div>
+                <div class="set-val">Active</div>
+            </div>
+
+            <div class="set-section">About</div>
+            <div class="set-row">
+                <div class="set-label">SilentBridge</div>
+                <div class="set-val">v1.0.0</div>
+            </div>
+
+            <div style="height:80px"></div>
+        </div>
+
+        <!-- Bottom nav (Settings) -->
+        <div class="bottom-nav">
+            <div class="nav-item" onclick="go('home')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span class="nav-label">Home</span>
+            </div>
+            <div class="nav-item" onclick="go('transcript-screen')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span class="nav-label">History</span>
+            </div>
+
+            <div class="nav-item active" onclick="go('settings')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span class="nav-label">Settings</span>
+            </div>
+        </div>
+    </div>
+
+            </div>
+
+            <!-- Train Model Card -->
+            <div class="train-card">
+                <div class="train-card-title">3. Train Model</div>
+                <div style="font-size:13px;color:#6b6b80;margin-bottom:16px">
+                    Train the LSTM model on your collected gesture samples. Requires at least 2 different gesture labels with samples.
+                </div>
+                <div class="train-actions">
+                    <button class="train-btn primary" onclick="triggerTraining(50)">
+                        🧠 Train Model (50 epochs)
+                    </button>
+                    <button class="train-btn secondary" onclick="triggerTraining(100)">
+                        Train 100 epochs
+                    </button>
+                </div>
+                <div class="train-progress" style="margin-top:12px">
+                    <div class="train-progress-bar" id="train-progress-bar" style="width:0%"></div>
+                </div>
+                <div class="train-log" id="train-log">
+                    <div>[Ready] Enter gesture labels and record samples to begin training.</div>
+                </div>
+            </div>
+
+            <div style="height:80px"></div>
+        </div>
+
+        <!-- Bottom nav (Training) -->
+        <div class="bottom-nav">
+            <div class="nav-item" onclick="go('home')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span class="nav-label">Home</span>
+            </div>
+            <div class="nav-item" onclick="go('transcript-screen')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span class="nav-label">History</span>
+            </div>
+
+            <div class="nav-item" onclick="go('settings')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span class="nav-label">Settings</span>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPTS
+     ═══════════════════════════════════════════════════════════════════ -->
+<script src="app.js"></script>
+<script src="webrtc.js"></script>
+<script src="ml-pipeline.js"></script>
+<script src="speech.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<script>
+    // Training mode helpers
+    let _isRecordingToggle = false;
+
+    function handleRecordToggle() {
+        const label = document.getElementById('gesture-label')?.value;
+        if (!_isRecordingToggle) {
+            if (!label || label.trim() === '') {
+                alert('Please enter a gesture label first');
+                return;
+            }
+            _isRecordingToggle = true;
+            const btn = document.getElementById('btn-record');
+            if (btn) { btn.textContent = '■ Stop Recording'; btn.style.background = '#e24b4a'; }
+            startRecording(label);
+        } else {
+            _isRecordingToggle = false;
+            const btn = document.getElementById('btn-record');
+            if (btn) { btn.textContent = '● Start Recording'; btn.style.background = ''; }
+            stopRecording();
+        }
+    }
+
+    async function startTrainCamera() {
+        try {
+            if (!window.localStream) {
+                window.localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+                    audio: false
+                });
+            }
+            const trainVideo = document.getElementById('train-video');
+            if (trainVideo) trainVideo.srcObject = window.localStream;
+        } catch (e) {
+            alert('Camera access denied. Please allow camera access.');
+        }
+    }
+
+    // Check model status on load
+    async function checkModelStatus() {
+        try {
+            const res = await fetch(API_BASE + '/model/status');
+            if (res.ok) {
+                const data = await res.json();
+                const badge = document.getElementById('model-status-badge');
+                if (badge) {
+                    badge.textContent = data.loaded
+                        ? `Trained (${data.num_classes} classes)`
+                        : 'Not trained';
+                }
+            }
+        } catch (e) {
+            // Backend not running
+        }
+    }
+
+    // Run checks after DOM is ready
+    setTimeout(checkModelStatus, 1000);
+</script>
+
+</body>
+</html>
