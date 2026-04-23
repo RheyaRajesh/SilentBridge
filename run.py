@@ -29,11 +29,11 @@ def main():
     def open_browser():
         time.sleep(2)
         url = f"http://localhost:{port}"
-        print(f"\n  ┌────────────────────────────────────────┐")
-        print(f"  │  SilentBridge is running!               │")
-        print(f"  │  Open: {url:<31s} │")
-        print(f"  │  API docs: {url + '/docs':<27s} │")
-        print(f"  └────────────────────────────────────────┘\n")
+        print(f"\n  +----------------------------------------+")
+        print(f"  |  SilentBridge is running!               |")
+        print(f"  |  Open: {url:<31s} |")
+        print(f"  |  API docs: {url + '/docs':<27s} |")
+        print(f"  +----------------------------------------+\n")
         webbrowser.open(url)
 
     threading.Thread(target=open_browser, daemon=True).start()
@@ -45,7 +45,7 @@ def main():
             "backend.main:app",
             host=host,
             port=port,
-            reload=False,
+            reload=True,
             log_level="info",
         )
     except ImportError:

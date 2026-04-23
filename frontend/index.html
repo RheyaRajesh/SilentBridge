@@ -11,6 +11,9 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<!-- Custom cursor elements -->
+<div class="custom-cursor" id="cursor-dot"></div>
+<div class="custom-cursor-ring" id="cursor-ring"></div>
 
 <div class="app-container" id="app">
 
@@ -38,7 +41,7 @@
                 <button class="splash-btn" id="btn-login" onclick="handleLogin()" style="width: 100%;">Sign in</button>
             </div>
         </div>
-        <div style="padding-bottom:32px;text-align:center;font-size:12px;color:#3a3a4a">v1.0 · Powered by MediaPipe + PyTorch + Whisper</div>
+        <div style="padding-bottom:32px;text-align:center;font-size:12px;color:#3a3a4a">v1.0 · Powered by MediaPipe + Rule-Based Engine + Whisper</div>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════
@@ -59,7 +62,7 @@
                 </div>
                 <div>
                     <div class="role-title">I use sign language</div>
-                    <div class="role-desc">Camera captures your signs, AI translates to text and speech in real time via MediaPipe + LSTM</div>
+                    <div class="role-desc">Camera captures your signs, predefined gesture engine translates to text and speech in real time</div>
                 </div>
             </div>
 
@@ -121,7 +124,7 @@
             <div class="status-card">
                 <div class="status-label">Active mode</div>
                 <div class="status-value" id="mode-display">Sign language user · English</div>
-                <div class="status-sub">MediaPipe ready · LSTM model initialized</div>
+                <div class="status-sub">MediaPipe ready · Rule-Based Gesture Engine active</div>
             </div>
 
             <!-- Online contacts -->
@@ -233,12 +236,25 @@
     <div class="screen" id="call">
         <!-- Remote video (full background) -->
         <div class="video-bg" id="video-bg">
-            <video id="remote-video" autoplay playsinline style="filter:brightness(0.7)"></video>
+            <video id="remote-video" autoplay playsinline muted></video>
         </div>
 
         <!-- Self-view (picture-in-picture) -->
-        <div class="video-selfview">
+        <div class="video-selfview" id="selfview-container">
             <video id="self-video" autoplay muted playsinline></video>
+            <!-- Placeholder shown before camera starts -->
+            <div class="cam-placeholder" id="cam-placeholder">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                    <polygon points="23 7 16 12 23 17 23 7" stroke="#9b9baa" stroke-width="1.5" stroke-linejoin="round"/>
+                    <rect x="1" y="5" width="15" height="14" rx="2" stroke="#9b9baa" stroke-width="1.5"/>
+                </svg>
+                <span>Starting camera…</span>
+            </div>
+            <!-- Live badge -->
+            <div class="selfview-live-badge" id="selfview-live-badge" style="display:none">
+                <div class="selfview-live-dot"></div>
+                <span>YOU</span>
+            </div>
         </div>
 
         <!-- Call header -->
@@ -254,20 +270,27 @@
         <div class="sign-banner">
             <div class="sign-mode-badge">
                 <div class="sign-anim"></div>
-                <span id="sign-status">MediaPipe active · Keypoints extracting</span>
+                <span id="sign-status">Starting camera &amp; AI engine…</span>
             </div>
         </div>
 
         <!-- Live transcript panel (subtitles) -->
         <div class="transcript-panel" id="transcript-panel"></div>
 
+        <!-- Subtitle overlay (Google Meet style) -->
+        <div class="subtitle-overlay" id="subtitle-overlay"></div>
+
         <!-- Call controls -->
         <div class="call-controls">
             <div class="ctrl-group">
-                <button class="ctrl-btn" id="btn-share-call-link" onclick="copyMeetingLink()">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <button class="ctrl-btn" id="btn-share-call-link" onclick="copyMeetingLink()" title="Share on WhatsApp">
+                    <!-- WhatsApp icon -->
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" fill="#25D366"/>
+                        <path d="M12 2C6.477 2 2 6.477 2 12c0 1.821.487 3.53 1.338 5L2 22l5.112-1.338A9.953 9.953 0 0 0 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
                 </button>
-                <span class="ctrl-label">Link</span>
+                <span class="ctrl-label">Share</span>
             </div>
 
             <div class="ctrl-group">
@@ -369,7 +392,7 @@
             <div class="set-row">
                 <div>
                     <div class="set-label">User role</div>
-                    <div class="set-sub">Sign language user</div>
+                    <div class="set-sub" id="settings-role-display">Sign language user</div>
                 </div>
                 <div class="set-val" onclick="go('onboard')">Change</div>
             </div>
@@ -387,9 +410,9 @@
             <div class="set-row">
                 <div>
                     <div class="set-label">Sign Engine</div>
-                    <div class="set-sub">Universal Sign Language · Heuristic-based · Active</div>
+                    <div class="set-sub">Universal Sign Language · Predefined Rules · Active</div>
                 </div>
-                <div class="set-val" id="model-status-badge">Pre-trained</div>
+                <div class="set-val" id="model-status-badge">Rule-Based</div>
             </div>
             <div class="set-row">
                 <div>
@@ -403,7 +426,7 @@
                     <div class="set-label">Confidence threshold</div>
                     <div class="set-sub">Minimum score to display inference</div>
                 </div>
-                <div class="set-val">0.60</div>
+                <div class="set-val">0.75</div>
             </div>
 
             <div class="set-section">Call</div>
@@ -456,50 +479,7 @@
         </div>
     </div>
 
-            </div>
-
-            <!-- Train Model Card -->
-            <div class="train-card">
-                <div class="train-card-title">3. Train Model</div>
-                <div style="font-size:13px;color:#6b6b80;margin-bottom:16px">
-                    Train the LSTM model on your collected gesture samples. Requires at least 2 different gesture labels with samples.
-                </div>
-                <div class="train-actions">
-                    <button class="train-btn primary" onclick="triggerTraining(50)">
-                        🧠 Train Model (50 epochs)
-                    </button>
-                    <button class="train-btn secondary" onclick="triggerTraining(100)">
-                        Train 100 epochs
-                    </button>
-                </div>
-                <div class="train-progress" style="margin-top:12px">
-                    <div class="train-progress-bar" id="train-progress-bar" style="width:0%"></div>
-                </div>
-                <div class="train-log" id="train-log">
-                    <div>[Ready] Enter gesture labels and record samples to begin training.</div>
-                </div>
-            </div>
-
-            <div style="height:80px"></div>
-        </div>
-
-        <!-- Bottom nav (Training) -->
-        <div class="bottom-nav">
-            <div class="nav-item" onclick="go('home')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.5"/></svg>
-                <span class="nav-label">Home</span>
-            </div>
-            <div class="nav-item" onclick="go('transcript-screen')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="1.5"/></svg>
-                <span class="nav-label">History</span>
-            </div>
-
-            <div class="nav-item" onclick="go('settings')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.5"/></svg>
-                <span class="nav-label">Settings</span>
-            </div>
-        </div>
-    </div>
+    <!-- Training screen removed (now using predefined rule-based gestures) -->
 
 </div>
 
@@ -512,63 +492,61 @@
 <script src="speech.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
+<!-- Custom Cursor Script -->
 <script>
-    // Training mode helpers
-    let _isRecordingToggle = false;
+(function() {
+    const dot  = document.getElementById('cursor-dot');
+    const ring = document.getElementById('cursor-ring');
+    let rx = 0, ry = 0, dx = 0, dy = 0;
 
-    function handleRecordToggle() {
-        const label = document.getElementById('gesture-label')?.value;
-        if (!_isRecordingToggle) {
-            if (!label || label.trim() === '') {
-                alert('Please enter a gesture label first');
-                return;
-            }
-            _isRecordingToggle = true;
-            const btn = document.getElementById('btn-record');
-            if (btn) { btn.textContent = '■ Stop Recording'; btn.style.background = '#e24b4a'; }
-            startRecording(label);
-        } else {
-            _isRecordingToggle = false;
-            const btn = document.getElementById('btn-record');
-            if (btn) { btn.textContent = '● Start Recording'; btn.style.background = ''; }
-            stopRecording();
-        }
+    document.addEventListener('mousemove', e => {
+        dx = e.clientX; dy = e.clientY;
+        dot.style.left  = dx + 'px';
+        dot.style.top   = dy + 'px';
+    });
+
+    // Ring follows with lag
+    function animateRing() {
+        rx += (dx - rx) * 0.14;
+        ry += (dy - ry) * 0.14;
+        ring.style.left = rx + 'px';
+        ring.style.top  = ry + 'px';
+        requestAnimationFrame(animateRing);
     }
+    animateRing();
 
-    async function startTrainCamera() {
-        try {
-            if (!window.localStream) {
-                window.localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-                    audio: false
-                });
-            }
-            const trainVideo = document.getElementById('train-video');
-            if (trainVideo) trainVideo.srcObject = window.localStream;
-        } catch (e) {
-            alert('Camera access denied. Please allow camera access.');
-        }
-    }
+    document.addEventListener('mousedown', () => {
+        dot.classList.add('clicking');
+        ring.classList.add('clicking');
+    });
+    document.addEventListener('mouseup', () => {
+        dot.classList.remove('clicking');
+        ring.classList.remove('clicking');
+    });
 
-    // Check model status on load
+    // Expand on interactive elements
+    document.addEventListener('mouseover', e => {
+        const t = e.target;
+        const isInteractive = t.matches('button,a,[onclick],.role-card,.contact-card,.call-btn,.nav-item,.lang-btn,.ctrl-btn');
+        dot.classList.toggle('on-btn', isInteractive);
+        ring.classList.toggle('on-btn', isInteractive);
+    });
+})();
+</script>
+
+<script>
+    // ── Model Status ────────────────────────────────────────────────────────
     async function checkModelStatus() {
         try {
             const res = await fetch(API_BASE + '/model/status');
             if (res.ok) {
                 const data = await res.json();
                 const badge = document.getElementById('model-status-badge');
-                if (badge) {
-                    badge.textContent = data.loaded
-                        ? `Trained (${data.num_classes} classes)`
-                        : 'Not trained';
-                }
+                if (badge) badge.textContent = data.loaded ? `Rule-Based (${data.num_classes} classes)` : 'Not loaded';
             }
-        } catch (e) {
-            // Backend not running
-        }
+        } catch (e) { /* backend not running */ }
     }
 
-    // Run checks after DOM is ready
     setTimeout(checkModelStatus, 1000);
 </script>
 

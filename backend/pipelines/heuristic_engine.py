@@ -1,98 +1,134 @@
 import numpy as np
+import logging
+from collections import deque, Counter
+
+logger = logging.getLogger("heuristic_engine")
+
 
 class HeuristicSignEngine:
-    """
-    Recognizes common sign language gestures using geometric heuristics on MediaPipe keypoints.
-    This provides instant 'pre-trained' functionality without requiring user training.
-    """
 
-    def __init__(self, seq_length=30, confidence_threshold=0.7):
-        self.seq_length = seq_length
-        self.threshold = confidence_threshold
-        # Keypoint layout constants
-        self.POSE_START = 0
-        self.LEFT_HAND_START = 36
-        self.RIGHT_HAND_START = 99
+    LEFT_HAND_START  = 36
+    RIGHT_HAND_START = 99
+    POSE_START       = 0
+
+    # Hand landmarks
+    WRIST = 0
+    THUMB_TIP = 4
+    INDEX_TIP = 8
+    MID_TIP = 12
+    RING_TIP = 16
+    PINKY_TIP = 20
+    MID_MCP = 9
+
+    def __init__(self):
+        self.history = deque(maxlen=8)
 
     def predict(self, sequence):
-        """
-        Processes a sequence of 30 frames (each 162-dim).
-        Returns (label, confidence) or (None, 0).
-        """
-        seq = np.array(sequence) # (30, 162)
-        
-        # 1. Analyze Motion
-        # Extract right hand wrist (indices 99, 100, 101)
-        rw_x = seq[:, self.RIGHT_HAND_START]
-        rw_y = seq[:, self.RIGHT_HAND_START + 1]
-        
-        # Check for waving motion (high variance in X)
-        x_variance = np.var(rw_x[rw_x != 0]) if np.any(rw_x != 0) else 0
-        if x_variance > 0.005:
-            return "HELLO", 0.95
+        seq = np.array(sequence, dtype=np.float32)
 
-        # 2. Analyze Hand Shapes (latest frame)
-        last_frame = seq[-1]
-        
-        # Helper to check Right Hand
-        label, conf = self._check_hand_shape(last_frame, self.RIGHT_HAND_START)
-        if label:
-            return label, conf
-            
-        # Helper to check Left Hand
-        label, conf = self._check_hand_shape(last_frame, self.LEFT_HAND_START)
-        if label:
-            return label, conf
+        if seq.shape[0] < 10:
+            return None, 0.0
 
-        return None, 0
+        last = seq[-1]
 
-    def _check_hand_shape(self, frame, offset):
-        """Analyze a single hand shape from keypoints."""
-        # Extract 21 landmarks (x, y, z)
-        hand = frame[offset : offset + 63].reshape(21, 3)
-        if np.all(hand == 0):
-            return None, 0
+        # Hands
+        lh = last[self.LEFT_HAND_START:self.LEFT_HAND_START+63].reshape(21,3)
+        rh = last[self.RIGHT_HAND_START:self.RIGHT_HAND_START+63].reshape(21,3)
 
-        # Indices: 0: Wrist, 4: Thumb, 8: Index, 12: Middle, 16: Ring, 20: Pinky
-        wrist = hand[0]
-        thumb_tip = hand[4]
-        index_tip = hand[8]
-        middle_tip = hand[12]
-        ring_tip = hand[16]
-        pinky_tip = hand[20]
+        # Pose (for face reference)
+        pose = last[self.POSE_START:self.POSE_START+36].reshape(12,3)
 
-        # 1. THUMBS UP (GOOD / YES)
-        # Thumb tip is higher (lower Y) than all other fingers and wrist
-        fingers_y = [hand[8][1], hand[12][1], hand[16][1], hand[20][1]]
-        if thumb_tip[1] < min(fingers_y) - 0.1 and thumb_tip[1] < wrist[1] - 0.1:
-            # Check if other fingers are folded (close to wrist)
-            if all(np.linalg.norm(hand[i] - wrist) < 0.2 for i in [8, 12, 16, 20]):
-                return "GOOD", 0.9
+        # choose dominant hand
+        hand = rh if np.count_nonzero(rh) > np.count_nonzero(lh) else lh
 
-        # 2. PEACE / VICTORY (V-Sign)
-        # Index and Middle Extended, others folded
-        if (index_tip[1] < wrist[1] - 0.15 and 
-            middle_tip[1] < wrist[1] - 0.15 and 
-            ring_tip[1] > middle_tip[1] + 0.1 and
-            pinky_tip[1] > middle_tip[1] + 0.1):
-            return "PEACE", 0.85
+        if np.count_nonzero(hand) < 10:
+            return None, 0.0
 
-        # 3. I LOVE YOU (ILY)
-        # Thumb, Index, Pinky Extended, Middle/Ring folded
-        if (thumb_tip[0] > wrist[0] + 0.1 and
-            index_tip[1] < wrist[1] - 0.15 and 
-            pinky_tip[1] < wrist[1] - 0.15 and
-            middle_tip[1] > wrist[1] - 0.1 and
-            ring_tip[1] > wrist[1] - 0.1):
-            return "LOVE", 0.95
+        wrist = hand[self.WRIST]
+        mid_mcp = hand[self.MID_MCP]
 
-        # 4. THANK YOU (Static snapshot of hand near chin/chest)
-        # Hand flat, fingers extended together
-        all_tips_extended = all(hand[i][1] < wrist[1] - 0.15 for i in [8, 12, 16, 20])
-        tips_together = np.var([hand[i][0] for i in [8, 12, 16]]) < 0.002
-        if all_tips_extended and tips_together:
-            return "THANK_YOU", 0.8
+        scale = np.linalg.norm(mid_mcp - wrist)
+        if scale < 1e-3:
+            scale = 1.0
 
-        return None, 0
+        def dist(a, b):
+            return np.linalg.norm(a - b) / scale
+
+        def direction(vec):
+            x, y = vec[0], vec[1]
+            if abs(x) > abs(y):
+                return "RIGHT" if x > 0 else "LEFT"
+            else:
+                return "DOWN" if y > 0 else "UP"
+
+        # fingertips
+        t = hand[self.THUMB_TIP]
+        i = hand[self.INDEX_TIP]
+        m = hand[self.MID_TIP]
+        r = hand[self.RING_TIP]
+        p = hand[self.PINKY_TIP]
+
+        # ───────────── GESTURE RULES ─────────────
+
+        # 1. STOP → open palm
+        spread = np.var([i[0], m[0], r[0], p[0]])
+        if spread > 0.015:
+            return self._stable("STOP", 0.95)
+
+        # 2. VICTORY → index + middle extended
+        if (dist(i, wrist) > 1.2 and
+            dist(m, wrist) > 1.2 and
+            dist(r, wrist) < 1.0 and
+            dist(p, wrist) < 1.0):
+            return self._stable("VICTORY", 0.95)
+
+        # 3. THUMBS UP
+        thumb_vec = t - wrist
+        if dist(t, wrist) > 1.2 and direction(thumb_vec) == "UP":
+            return self._stable("THUMBS_UP", 0.95)
+
+        # 4–7. POINTING DIRECTIONS
+        index_vec = i - wrist
+        if dist(i, wrist) > 1.2 and all(dist(x, wrist) < 1.0 for x in [m, r, p]):
+            dirn = direction(index_vec)
+
+            if dirn == "UP":
+                return self._stable("POINT_UP", 0.95)
+            elif dirn == "DOWN":
+                return self._stable("POINT_DOWN", 0.95)
+            elif dirn == "LEFT":
+                return self._stable("POINT_LEFT", 0.95)
+            elif dirn == "RIGHT":
+                return self._stable("POINT_RIGHT", 0.95)
+
+        # 8. THANK YOU → hand near chin
+        if len(pose) >= 1:
+            chin = pose[0]  # approximate (mediapipe upper face ref)
+            if dist(wrist, chin) < 1.2:
+                return self._stable("THANK_YOU", 0.9)
+
+        # 9. CRY → hand below eye
+        if len(pose) >= 1:
+            eye = pose[0]
+            if wrist[1] > eye[1] + 0.1:
+                return self._stable("CRY", 0.9)
+
+        return None, 0.0
+
+    # ───────────── STABILITY FILTER ─────────────
+
+    def _stable(self, label, conf):
+        self.history.append(label)
+
+        if len(self.history) < 4:
+            return None, 0.0
+
+        most = Counter(self.history).most_common(1)[0]
+
+        if most[1] >= 3:
+            return most[0], conf
+
+        return None, 0.0
+
 
 heuristic_engine = HeuristicSignEngine()

@@ -1,22 +1,30 @@
 /**
  * SilentBridge — Speech Recognition & TTS
  *
- * Handles:
- *   1. Web Speech API (SpeechRecognition) for instant browser-side STT
- *   2. Audio recording via MediaRecorder for Whisper backend (higher accuracy)
- *   3. WebSocket streaming of audio chunks to backend
- *   4. TTS via SpeechSynthesis API
+ * Key improvements in this version:
+ *   1. Browser Web Speech API works standalone — no backend required for basic STT.
+ *   2. MediaRecorder replaces deprecated ScriptProcessor for Whisper audio capture.
+ *   3. Interim results shown as live subtitle overlay.
+ *   4. Auto-restart on all non-fatal speech errors.
+ *   5. Whisper WS reconnects with exponential back-off.
+ *   6. Proper cleanup on stopSpeechRecognition.
  */
 
-// ── State ─────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────
 
 let speechRecognition = null;
-let mediaRecorder = null;
-let audioChunks = [];
-let isSpeechActive = false;
-let speechWs = null;
+let mediaRecorder     = null;
+let isSpeechActive    = false;
+let speechWs          = null;
 
-// ── Web Speech API (Browser-native, instant) ──────────────────────────
+let _speechWsReconnectTimer = null;
+let _speechWsReconnectDelay = 1500;
+const SPEECH_WS_MAX_DELAY   = 16000;
+
+// MediaRecorder chunks for Whisper
+let _mediaRecorderChunks = [];
+
+// ── Web Speech API (Browser-native, instant results) ──────────────────────
 
 function initWebSpeechAPI() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -26,205 +34,284 @@ function initWebSpeechAPI() {
     }
 
     speechRecognition = new SpeechRecognition();
-    speechRecognition.continuous = true;
+    speechRecognition.continuous     = true;
     speechRecognition.interimResults = true;
-    speechRecognition.lang = currentLang === 'ta' ? 'ta-IN' : 'en-US';
-
-    let finalTranscript = '';
-    let interimTimeout = null;
+    speechRecognition.maxAlternatives = 1;
+    speechRecognition.lang = (typeof currentLang !== 'undefined' && currentLang === 'ta')
+        ? 'ta-IN'
+        : 'en-US';
 
     speechRecognition.onresult = (event) => {
-        let interim = '';
+        let interimText = '';
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
             const transcript = event.results[i][0].transcript.trim();
 
             if (event.results[i].isFinal) {
-                finalTranscript = transcript;
-
-                // Display final transcript
-                if (typeof onSpeechTranscribed === 'function') {
-                    onSpeechTranscribed(finalTranscript, 'browser');
+                if (transcript) {
+                    console.log('[Speech] Final transcript:', transcript);
+                    if (typeof onSpeechTranscribed === 'function') {
+                        onSpeechTranscribed(transcript, 'browser');
+                    }
                 }
-
-                // Send to peer
-                if (typeof sendTextToPeer === 'function') {
-                    sendTextToPeer(finalTranscript, 'Speech → Text');
-                }
-
-                finalTranscript = '';
             } else {
-                interim += transcript;
+                interimText += transcript;
             }
         }
 
-        // Update sign status with interim results
-        if (interim) {
+        // Show interim text in status banner and subtitle overlay
+        if (interimText) {
             const signStatus = document.getElementById('sign-status');
             if (signStatus) {
-                signStatus.textContent = 'Listening: "' + interim.substring(0, 40) + '..."';
+                signStatus.textContent = '🎤 ' + interimText.substring(0, 60) + (interimText.length > 60 ? '…' : '');
             }
         }
     };
 
     speechRecognition.onerror = (event) => {
-        if (event.error === 'no-speech') return; // Ignore no-speech errors
-        console.warn('[Speech] Recognition error:', event.error);
+        const fatalErrors = ['not-allowed', 'service-not-allowed', 'audio-capture'];
+        if (fatalErrors.includes(event.error)) {
+            console.error('[Speech] Fatal Web Speech error:', event.error);
+            isSpeechActive = false;
+            const signStatus = document.getElementById('sign-status');
+            if (signStatus) signStatus.textContent = 'Mic access denied — check browser permissions';
+            return;
+        }
+        // Non-fatal errors (network, aborted, no-speech) — onend will restart
+        console.debug('[Speech] Non-fatal error (will auto-restart):', event.error);
+    };
+
+    speechRecognition.onstart = () => {
+        console.log('[Speech] Web Speech API started listening');
+        const signStatus = document.getElementById('sign-status');
+        if (signStatus) signStatus.textContent = 'AI Engine active · Listening for speech…';
     };
 
     speechRecognition.onend = () => {
-        // Auto-restart if still active
         if (isSpeechActive) {
-            try {
-                speechRecognition.start();
-            } catch (e) {
-                // Already started
-            }
+            console.debug('[Speech] Web Speech ended — restarting in 250ms…');
+            setTimeout(() => {
+                if (isSpeechActive && speechRecognition) {
+                    try {
+                        speechRecognition.start();
+                    } catch (e) {
+                        console.debug('[Speech] Web Speech restart skipped:', e.message);
+                    }
+                }
+            }, 250);
         }
     };
 
     return true;
 }
 
-// ── Whisper Backend (Higher accuracy, async) ──────────────────────────
+// ── Whisper Backend WebSocket ─────────────────────────────────────────────
 
 function connectSpeechWs() {
+    if (typeof WS_BASE === 'undefined' || typeof clientId === 'undefined') {
+        console.warn('[Speech] WS_BASE or clientId not defined — Whisper WS skipped');
+        return;
+    }
+
+    if (speechWs && (speechWs.readyState === WebSocket.OPEN ||
+                      speechWs.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+
     const wsUrl = `${WS_BASE}/ws/speech/${clientId}`;
+    console.log('[Speech] Connecting Whisper WS:', wsUrl);
 
     try {
         speechWs = new WebSocket(wsUrl);
     } catch (e) {
-        console.warn('[Speech] Whisper WebSocket failed');
+        console.warn('[Speech] Whisper WebSocket creation failed:', e);
+        _scheduleSpeechWsReconnect();
         return;
     }
 
     speechWs.onopen = () => {
         console.log('[Speech] Whisper WebSocket connected');
+        _speechWsReconnectDelay = 1500;
+        clearTimeout(_speechWsReconnectTimer);
     };
 
     speechWs.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
+        let msg;
+        try { msg = JSON.parse(event.data); }
+        catch (e) { console.warn('[Speech] Non-JSON Whisper response:', event.data); return; }
+
         if (msg.type === 'transcription' && msg.text) {
-            // Whisper provides higher accuracy — display as authoritative
+            console.log('[Speech] Whisper transcription:', msg.text);
             if (typeof onSpeechTranscribed === 'function') {
                 onSpeechTranscribed(msg.text, 'whisper');
             }
+        } else if (msg.type === 'error') {
+            console.error('[Speech] Backend Whisper error:', msg.message);
+        } else if (msg.type === 'pong') {
+            // heartbeat — ignore
         }
     };
 
-    speechWs.onerror = () => {
-        console.warn('[Speech] Whisper WebSocket error');
+    speechWs.onerror = (e) => {
+        console.warn('[Speech] Whisper WebSocket error:', e);
     };
 
-    speechWs.onclose = () => {
+    speechWs.onclose = (ev) => {
+        console.log('[Speech] Whisper WS closed (code=%d)', ev.code);
         speechWs = null;
+        if (isSpeechActive) _scheduleSpeechWsReconnect();
     };
 }
 
-function startAudioRecording() {
-    if (!window.localStream) return;
+function _scheduleSpeechWsReconnect() {
+    clearTimeout(_speechWsReconnectTimer);
+    if (!isSpeechActive) return;
+    console.log(`[Speech] Whisper WS reconnecting in ${_speechWsReconnectDelay}ms…`);
+    _speechWsReconnectTimer = setTimeout(() => {
+        connectSpeechWs();
+        _speechWsReconnectDelay = Math.min(_speechWsReconnectDelay * 2, SPEECH_WS_MAX_DELAY);
+    }, _speechWsReconnectDelay);
+}
+
+// ── MediaRecorder → Whisper ────────────────────────────────────────────────
+
+function startMediaRecorderForWhisper() {
+    if (!window.localStream) {
+        console.warn('[Speech] No localStream for MediaRecorder');
+        return;
+    }
 
     const audioTracks = window.localStream.getAudioTracks();
-    if (audioTracks.length === 0) return;
-
-    const audioStream = new MediaStream(audioTracks);
-
-    try {
-        mediaRecorder = new MediaRecorder(audioStream, {
-            mimeType: 'audio/webm;codecs=opus',
-        });
-    } catch (e) {
-        // Fallback to default mime type
-        mediaRecorder = new MediaRecorder(audioStream);
+    if (audioTracks.length === 0) {
+        console.warn('[Speech] No audio tracks available');
+        return;
     }
 
-    audioChunks = [];
-
-    mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0) {
-            // Convert to PCM and send to Whisper backend
-            const arrayBuffer = await event.data.arrayBuffer();
-            sendAudioToWhisper(arrayBuffer);
-        }
-    };
-
-    // Collect audio in 3-second chunks
-    mediaRecorder.start(3000);
-    console.log('[Speech] Audio recording started (3s chunks)');
-}
-
-async function sendAudioToWhisper(arrayBuffer) {
-    if (!speechWs || speechWs.readyState !== WebSocket.OPEN) return;
-
     try {
-        // Convert ArrayBuffer to base64
-        const uint8Array = new Uint8Array(arrayBuffer);
-        let binary = '';
-        for (let i = 0; i < uint8Array.length; i++) {
-            binary += String.fromCharCode(uint8Array[i]);
-        }
-        const base64 = btoa(binary);
+        const audioStream = new MediaStream(audioTracks);
 
-        speechWs.send(JSON.stringify({
-            type: 'audio',
-            data: base64,
-            sample_rate: 16000,
-            language: currentLang === 'ta' ? 'ta' : 'en',
-            timestamp: Date.now(),
-        }));
-    } catch (e) {
-        console.warn('[Speech] Failed to send audio to Whisper:', e);
+        // Pick best supported MIME type
+        const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', '']
+            .find(m => !m || MediaRecorder.isTypeSupported(m)) || '';
+
+        mediaRecorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : {});
+        _mediaRecorderChunks = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) {
+                _mediaRecorderChunks.push(e.data);
+            }
+        };
+
+        mediaRecorder.onstop = async () => {
+            if (_mediaRecorderChunks.length === 0) return;
+
+            const blob = new Blob(_mediaRecorderChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+            _mediaRecorderChunks = [];
+
+            if (blob.size < 1000) {
+                console.debug('[Speech] Audio blob too small, skipping Whisper');
+                return;
+            }
+
+            // Send to Whisper if WS is ready
+            if (speechWs && speechWs.readyState === WebSocket.OPEN) {
+                try {
+                    const arrayBuffer = await blob.arrayBuffer();
+                    const uint8 = new Uint8Array(arrayBuffer);
+                    let binary = '';
+                    const CHUNK = 8192;
+                    for (let i = 0; i < uint8.length; i += CHUNK) {
+                        binary += String.fromCharCode(...uint8.subarray(i, i + CHUNK));
+                    }
+                    const base64 = btoa(binary);
+                    const lang = (typeof currentLang !== 'undefined' && currentLang === 'ta') ? 'ta' : 'en';
+
+                    speechWs.send(JSON.stringify({
+                        type:        'audio',
+                        data:        base64,
+                        sample_rate: 16000,
+                        language:    lang,
+                        timestamp:   Date.now(),
+                    }));
+                    console.debug('[Speech] Sent %d bytes of audio to Whisper', uint8.length);
+                } catch (e) {
+                    console.warn('[Speech] Failed to send audio to Whisper:', e);
+                }
+            }
+
+            // Restart recording if still active
+            if (isSpeechActive && mediaRecorder && mediaRecorder.state === 'inactive') {
+                try {
+                    mediaRecorder.start();
+                    setTimeout(() => {
+                        if (isSpeechActive && mediaRecorder && mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                        }
+                    }, 3000);
+                } catch (e) {
+                    console.debug('[Speech] MediaRecorder restart failed:', e);
+                }
+            }
+        };
+
+        // Start recording — stop every 3 seconds to send a chunk to Whisper
+        mediaRecorder.start();
+        setTimeout(() => {
+            if (isSpeechActive && mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+        }, 3000);
+
+        console.log('[Speech] MediaRecorder started (3s chunks for Whisper)');
+    } catch (err) {
+        console.error('[Speech] MediaRecorder init failed:', err);
     }
 }
 
-// ── Start/Stop Speech Recognition ─────────────────────────────────────
+// ── Start / Stop ──────────────────────────────────────────────────────────
 
 function startSpeechRecognition() {
     if (isSpeechActive) return;
     isSpeechActive = true;
+    console.log('[Speech] Starting speech recognition…');
 
-    console.log('[Speech] Starting speech recognition...');
-
-    // Start Web Speech API (instant)
+    // 1. Browser Web Speech API (instant, works on localhost/HTTPS)
     if (!speechRecognition) {
         initWebSpeechAPI();
     }
-
     if (speechRecognition) {
         try {
             speechRecognition.start();
-            console.log('[Speech] Web Speech API started');
         } catch (e) {
-            console.warn('[Speech] Web Speech API start failed:', e);
+            console.warn('[Speech] Web Speech start failed:', e);
         }
     }
 
-    // Connect Whisper backend (higher accuracy)
+    // 2. Whisper backend via WebSocket + MediaRecorder
+    _speechWsReconnectDelay = 1500;
     connectSpeechWs();
-
-    // Start audio recording for Whisper
-    startAudioRecording();
-
-    // Update UI
-    const signStatus = document.getElementById('sign-status');
-    if (signStatus) signStatus.textContent = 'Whisper active · Listening for speech';
+    startMediaRecorderForWhisper();
 }
 
 function stopSpeechRecognition() {
     isSpeechActive = false;
+    clearTimeout(_speechWsReconnectTimer);
+    console.log('[Speech] Stopping speech recognition…');
 
     if (speechRecognition) {
-        try {
-            speechRecognition.stop();
-        } catch (e) {
-            // Already stopped
-        }
+        try { speechRecognition.stop(); } catch (e) { /* already stopped */ }
+        speechRecognition = null;
     }
 
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+    if (mediaRecorder) {
+        try {
+            if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        } catch (e) { /* ignore */ }
         mediaRecorder = null;
     }
+
+    _mediaRecorderChunks = [];
 
     if (speechWs) {
         speechWs.close();
@@ -234,7 +321,7 @@ function stopSpeechRecognition() {
     console.log('[Speech] Speech recognition stopped');
 }
 
-// ── Exported ──────────────────────────────────────────────────────────
+// ── Exports ───────────────────────────────────────────────────────────────
 
 window.startSpeechRecognition = startSpeechRecognition;
-window.stopSpeechRecognition = stopSpeechRecognition;
+window.stopSpeechRecognition  = stopSpeechRecognition;
