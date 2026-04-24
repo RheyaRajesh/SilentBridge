@@ -111,8 +111,25 @@ function connectWS() {
 
         if (msg.type === "prediction") {
             console.log("Detected:", msg.label, msg.confidence);
+            
+            // Update sign status text
             const el = document.getElementById("sign-status");
             if (el) el.textContent = msg.label;
+
+            // Update Confidence Meter (Precision Visual)
+            const confContainer = document.getElementById("conf-container");
+            const confBar = document.getElementById("conf-bar");
+            const confValue = document.getElementById("conf-value");
+            
+            if (confContainer) confContainer.style.display = "flex";
+            if (confBar) confBar.style.width = (msg.confidence * 100) + "%";
+            if (confValue) confValue.textContent = Math.round(msg.confidence * 100) + "%";
+        }
+
+        if (msg.type === "no_sign") {
+            // Hide confidence when no sign is detected
+            const confContainer = document.getElementById("conf-container");
+            if (confContainer) confContainer.style.display = "none";
         }
 
         if (msg.type === "error") {
